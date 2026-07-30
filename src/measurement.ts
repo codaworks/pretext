@@ -82,7 +82,10 @@ function getFeatureContext(fontFeatureSettings: string): MeasureContext {
   const canvas = document.createElement('canvas')
   canvas.width = 1
   canvas.height = 1
-  canvas.style.cssText = 'position: absolute; visibility: hidden'
+  // pinned and zero-sized: an auto-inset absolute element lands at its static
+  // position after the page content, where even a hidden 1px box gives the
+  // document a scrollbar (scrollable overflow counts absolutely positioned boxes)
+  canvas.style.cssText = 'position: absolute; top: 0; left: 0; width: 0; height: 0; visibility: hidden'
   canvas.style.fontFeatureSettings = fontFeatureSettings
   document.body.appendChild(canvas)
   const ctx = canvas.getContext('2d')!
