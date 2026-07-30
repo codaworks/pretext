@@ -17,7 +17,12 @@ export type EngineProfile = {
 
 export type BreakableFitMode = 'sum-graphemes' | 'segment-prefixes' | 'pair-context'
 
-let measureContext: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null
+type MeasureContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
+
+let defaultContext: MeasureContext | null = null
+let activeContext: MeasureContext | null = null
+const featureContexts = new Map<string, { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }>()
+const MAX_FEATURE_CONTEXTS = 16
 const segmentMetricCaches = new Map<string, Map<string, SegmentMetrics>>()
 let cachedEngineProfile: EngineProfile | null = null
 
@@ -32,20 +37,57 @@ const maybeEmojiRe = /[\p{Emoji_Presentation}\p{Extended_Pictographic}\p{Regiona
 let sharedGraphemeSegmenter: Intl.Segmenter | null = null
 const emojiCorrectionCache = new Map<string, number>()
 
-export function getMeasureContext(): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D {
-  if (measureContext !== null) return measureContext
+export function getMeasureContext(): MeasureContext {
+  if (activeContext !== null) return activeContext
+  return getDefaultContext()
+}
+
+function getDefaultContext(): MeasureContext {
+  if (defaultContext !== null) return defaultContext
 
   if (typeof OffscreenCanvas !== 'undefined') {
-    measureContext = new OffscreenCanvas(1, 1).getContext('2d')!
-    return measureContext
+    defaultContext = new OffscreenCanvas(1, 1).getContext('2d')!
+    return defaultContext
   }
 
   if (typeof document !== 'undefined') {
-    measureContext = document.createElement('canvas').getContext('2d')!
-    return measureContext
+    defaultContext = document.createElement('canvas').getContext('2d')!
+    return defaultContext
   }
 
   throw new Error('Text measurement requires OffscreenCanvas or a DOM canvas context.')
+}
+
+// Canvas 2D contexts expose no font-feature control, but the CSS
+// font-feature-settings of an in-document canvas element does apply to its
+// context's measureText. OffscreenCanvas has no such channel, so feature
+// measurement needs a DOM canvas per feature string; without a document (or
+// before <body> exists) features are silently ignored.
+function getFeatureContext(fontFeatureSettings: string): MeasureContext {
+  const existing = featureContexts.get(fontFeatureSettings)
+  if (existing !== undefined) return existing.ctx
+
+  if (typeof document === 'undefined' || document.body === null) {
+    return getDefaultContext()
+  }
+
+  if (featureContexts.size >= MAX_FEATURE_CONTEXTS) {
+    for (const [key, entry] of featureContexts) {
+      entry.canvas.remove()
+      featureContexts.delete(key)
+      break
+    }
+  }
+
+  const canvas = document.createElement('canvas')
+  canvas.width = 1
+  canvas.height = 1
+  canvas.style.cssText = 'position: absolute; visibility: hidden'
+  canvas.style.fontFeatureSettings = fontFeatureSettings
+  document.body.appendChild(canvas)
+  const ctx = canvas.getContext('2d')!
+  featureContexts.set(fontFeatureSettings, { canvas, ctx })
+  return ctx
 }
 
 export function getSegmentMetricCache(font: string): Map<string, SegmentMetrics> {
@@ -285,14 +327,20 @@ export function getSegmentBreakableFitAdvances(
   return metrics.breakableFitAdvances
 }
 
-export function getFontMeasurementState(font: string, needsEmojiCorrection: boolean): {
+export function getFontMeasurementState(
+  font: string,
+  needsEmojiCorrection: boolean,
+  fontFeatureSettings?: string,
+): {
   cache: Map<string, SegmentMetrics>
   fontSize: number
   emojiCorrection: number
 } {
-  const ctx = getMeasureContext()
-  ctx.font = font
-  const cache = getSegmentMetricCache(font)
+  activeContext = fontFeatureSettings === undefined ? getDefaultContext() : getFeatureContext(fontFeatureSettings)
+  activeContext.font = font
+  const cache = getSegmentMetricCache(
+    fontFeatureSettings === undefined ? font : `${font}\u0000${fontFeatureSettings}`,
+  )
   const fontSize = parseFontSize(font)
   const emojiCorrection = needsEmojiCorrection ? getEmojiCorrection(font, fontSize) : 0
   return { cache, fontSize, emojiCorrection }
@@ -302,4 +350,9 @@ export function clearMeasurementCaches(): void {
   segmentMetricCaches.clear()
   emojiCorrectionCache.clear()
   sharedGraphemeSegmenter = null
+  for (const entry of featureContexts.values()) {
+    entry.canvas.remove()
+  }
+  featureContexts.clear()
+  activeContext = null
 }

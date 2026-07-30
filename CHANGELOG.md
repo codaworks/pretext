@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Added
+
+- `prepare()` / `prepareWithSegments()` accept a `fontFeatureSettings` option (a CSS `font-feature-settings` value), and rich-inline items accept a per-item `fontFeatureSettings`, so text measured with OpenType features — stylistic sets, slashed zero, pinned alternates — wraps where the browser wraps it. Feature measurement uses a hidden DOM canvas, so it needs a document; without one the option is ignored.
+
 ### Changed
 
 - Safari soft-hyphen wrapping now follows the same strict insertion-point behavior across `layout()`, rich-line, and streaming APIs. The Safari compatibility profile was revalidated on Safari 26.4, after previously being validated through Safari 26.3.1.

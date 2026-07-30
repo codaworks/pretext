@@ -156,6 +156,7 @@ export type PrepareOptions = {
   whiteSpace?: WhiteSpaceMode
   wordBreak?: WordBreakMode
   letterSpacing?: number
+  fontFeatureSettings?: string
 }
 
 // Internal hard-break chunk hint for the line walker. Not public because
@@ -394,11 +395,13 @@ function measureAnalysis(
   includeSegments: boolean,
   wordBreak: WordBreakMode,
   letterSpacing: number,
+  fontFeatureSettings?: string,
 ): InternalPreparedText | PreparedTextWithSegments {
   const engineProfile = getEngineProfile()
   const { cache, emojiCorrection } = getFontMeasurementState(
     font,
     textMayContainEmoji(analysis.normalized),
+    fontFeatureSettings,
   )
   const discretionaryHyphenWidth =
     getCorrectedSegmentWidth('-', getSegmentMetrics('-', cache), emojiCorrection) +
@@ -679,7 +682,7 @@ function prepareInternal(
   const wordBreak = options?.wordBreak ?? 'normal'
   const letterSpacing = options?.letterSpacing ?? 0
   const analysis = analyzeText(text, getEngineProfile(), options?.whiteSpace, wordBreak)
-  return measureAnalysis(analysis, font, includeSegments, wordBreak, letterSpacing)
+  return measureAnalysis(analysis, font, includeSegments, wordBreak, letterSpacing, options?.fontFeatureSettings)
 }
 
 // Prepare text for layout. Segments the text, measures each segment via canvas,

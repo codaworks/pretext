@@ -91,9 +91,12 @@ function isWideCharacter(ch: string): boolean {
   )
 }
 
-function measureWidth(text: string, font: string): number {
+function measureWidth(text: string, font: string, fontFeatureSettings?: string): number {
   const fontSize = parseFontSize(font)
   const chars = Array.from(text)
+  // Fake feature rule: ss01 widens ordinary letters, mirroring how a real
+  // stylistic set swaps glyphs with different advances.
+  const letterEm = fontFeatureSettings?.includes('ss01') ? 0.8 : 0.6
   let width = 0
   let previousWasDecimalDigit = false
 
@@ -134,7 +137,7 @@ function measureWidth(text: string, font: string): number {
       width += fontSize * 0.4
       previousWasDecimalDigit = false
     } else {
-      width += fontSize * 0.6
+      width += fontSize * letterEm
       previousWasDecimalDigit = false
     }
   }
@@ -284,8 +287,39 @@ class TestOffscreenCanvas {
   }
 }
 
+// DOM canvas fake for the feature-measurement path: the engine reads
+// font-feature-settings from the canvas element's style, like real browsers.
+class TestFeatureCanvasContext {
+  font = ''
+  element: TestCanvasElement
+
+  constructor(element: TestCanvasElement) {
+    this.element = element
+  }
+
+  measureText(text: string): { width: number } {
+    return { width: measureWidth(text, this.font, this.element.style['fontFeatureSettings']) }
+  }
+}
+
+class TestCanvasElement {
+  style: Record<string, string> = {}
+  width = 0
+  height = 0
+
+  getContext(_kind: string): TestFeatureCanvasContext {
+    return new TestFeatureCanvasContext(this)
+  }
+
+  remove(): void {}
+}
+
 beforeAll(async () => {
   Reflect.set(globalThis, 'OffscreenCanvas', TestOffscreenCanvas)
+  Reflect.set(globalThis, 'document', {
+    body: { appendChild(): void {} },
+    createElement: () => new TestCanvasElement(),
+  })
   const [analysisMod, mod, lineBreakMod, measurementMod, richInlineMod] = await Promise.all([
     import('./analysis.ts'),
     import('./layout.ts'),
@@ -333,6 +367,19 @@ describe('cross-segment shaping context', () => {
     const shapedWidth = measureWidth(NAME, FONT)
     const prepared = prepare(NAME, FONT)
     expect(layout(prepared, shapedWidth + 0.1, LINE_HEIGHT)).toEqual({ lineCount: 1, height: LINE_HEIGHT })
+  })
+})
+
+describe('font feature settings', () => {
+  test('feature widths measure through a feature-scoped context and cache', () => {
+    const text = 'aaa bbb'
+    const plain = prepareWithSegments(text, FONT)
+    const featured = prepareWithSegments(text, FONT, { fontFeatureSettings: '"ss01" 1' })
+
+    expect(measureNaturalWidth(featured)).toBeCloseTo(measureWidth(text, FONT, '"ss01" 1'), 6)
+    expect(measureNaturalWidth(featured)).toBeGreaterThan(measureNaturalWidth(plain))
+    // same segment strings prepared plain again must not reuse feature widths
+    expect(measureNaturalWidth(prepareWithSegments(text, FONT))).toBeCloseTo(measureWidth(text, FONT), 6)
   })
 })
 
