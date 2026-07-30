@@ -6,6 +6,10 @@
 
 - Safari soft-hyphen wrapping now follows the same strict insertion-point behavior across `layout()`, rich-line, and streaming APIs. The Safari compatibility profile was revalidated on Safari 26.4, after previously being validated through Safari 26.3.1.
 
+### Fixed
+
+- Segment measurement now includes a short following context as shaping lookahead — through spaces up to the next visible letter — so cross-boundary kerning and required ligatures (e.g. Hebrew fonts that only ligate a word-final letter when a following letter shares the shaping buffer, even across a space) no longer overstate widths and wrap lines browsers keep whole.
+
 ## 0.0.8 - 2026-06-11
 
 ### Added

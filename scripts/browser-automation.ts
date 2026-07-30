@@ -610,7 +610,9 @@ export async function ensurePageServer(
     return { baseUrl: existingBaseUrl, process: null }
   }
 
-  const serverProcess = spawn('/bin/zsh', ['-lc', `bun --port=${port} --no-hmr pages/*.html`], {
+  // Spawn the running Bun binary directly: no shell dependency (zsh is not a
+  // given outside macOS), and Bun expands the html globs itself.
+  const serverProcess = spawn(process.execPath, [`--port=${port}`, '--no-hmr', 'pages/*.html'], {
     cwd,
     stdio: 'ignore',
   })

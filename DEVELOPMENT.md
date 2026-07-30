@@ -20,7 +20,7 @@ bun install
 - `bun run site:build` — build the static demo site into `site/`
 - `bun run generate:bidi-data` — refresh the checked-in simplified Unicode bidi ranges
 
-`prepack` also rebuilds `dist/` through plain `tsc`, so source imports need `.js` specifiers that remain valid in the emitted files.
+`prepack` also rebuilds `dist/` through plain `tsc`, so source imports need `.js` specifiers that remain valid in the emitted files. `prepare` runs the same build so git-dependency installs (npm only runs `prepare` for those) get a `dist/` too.
 
 ### Browser Accuracy And Benchmarking
 

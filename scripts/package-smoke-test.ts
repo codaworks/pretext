@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -161,7 +162,10 @@ async function installTarball(projectDir: string, tarballPath: string): Promise<
 }
 
 function tscBinaryName(): string {
-  return process.platform === 'win32' ? 'tsc.cmd' : 'tsc'
+  if (process.platform !== 'win32') return 'tsc'
+  // Bun installs .exe shims in node_modules/.bin; npm installs .cmd shims.
+  const bunShim = path.join(root, 'node_modules', '.bin', 'tsc.exe')
+  return existsSync(bunShim) ? 'tsc.exe' : 'tsc.cmd'
 }
 
 function run(

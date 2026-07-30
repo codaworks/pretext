@@ -93,10 +93,28 @@ function isWideCharacter(ch: string): boolean {
 
 function measureWidth(text: string, font: string): number {
   const fontSize = parseFontSize(font)
+  const chars = Array.from(text)
   let width = 0
   let previousWasDecimalDigit = false
 
-  for (const ch of text) {
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i]!
+    // Required-ligature stand-in: `ל` + `_` ligate into one narrow glyph, but
+    // only when the shaping lookahead — which skips spaces — finds a following
+    // non-space character in the measured string (mirrors real fonts whose
+    // word-final ligature needs a following letter, not just a trailing space).
+    if (ch === 'ל' && chars[i + 1] === '_') {
+      let j = i + 2
+      while (j < chars.length && chars[j] === ' ') {
+        j++
+      }
+      if (j < chars.length) {
+        width += fontSize * 0.25
+        previousWasDecimalDigit = false
+        i++
+        continue
+      }
+    }
     if (ch === ' ') {
       width += fontSize * 0.33
       previousWasDecimalDigit = false
@@ -298,6 +316,24 @@ beforeAll(async () => {
 beforeEach(() => {
   setLocale(undefined)
   clearCache()
+})
+
+describe('cross-segment shaping context', () => {
+  // Word-final `ל_` only ligates when the next character shares the shaping
+  // buffer, so measuring word segments in isolation overstates their width and
+  // wraps lines the browser keeps whole.
+  const NAME = 'יואל_ בצל_אל_ דוד'
+
+  test('natural width matches the whole-string measurement', () => {
+    const prepared = prepareWithSegments(NAME, FONT)
+    expect(measureNaturalWidth(prepared)).toBeCloseTo(measureWidth(NAME, FONT), 6)
+  })
+
+  test('word-final required ligature does not wrap the line early', () => {
+    const shapedWidth = measureWidth(NAME, FONT)
+    const prepared = prepare(NAME, FONT)
+    expect(layout(prepared, shapedWidth + 0.1, LINE_HEIGHT)).toEqual({ lineCount: 1, height: LINE_HEIGHT })
+  })
 })
 
 describe('measurement invariants', () => {
@@ -1633,7 +1669,9 @@ describe('layout invariants', () => {
   test('measureNaturalWidth returns the widest forced line', () => {
     const prepared = prepareWithSegments('wide line\nfit\nmid', FONT, { whiteSpace: 'pre-wrap' })
 
-    expect(measureNaturalWidth(prepared)).toBe(measureWidth('wide line', FONT))
+    // close-to: segment widths are differences of context measures, which
+    // carry float dust well below the line-fit epsilon
+    expect(measureNaturalWidth(prepared)).toBeCloseTo(measureWidth('wide line', FONT), 6)
   })
 
   test('line-break geometry helpers stay aligned with streamed line ranges', () => {

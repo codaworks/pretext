@@ -52,9 +52,11 @@ import {
 import {
   type BreakableFitMode,
   clearMeasurementCaches,
+  getContextualSegmentWidth,
   getCorrectedSegmentWidth,
   getSegmentBreakableFitAdvances,
   getEngineProfile,
+  getFirstGrapheme,
   getFontMeasurementState,
   getSegmentMetrics,
   textMayContainEmoji,
@@ -452,12 +454,13 @@ function measureAnalysis(
     start: number,
     wordLike: boolean,
     allowOverflowBreaks: boolean,
+    followingContext: string | null,
   ): void {
     const spacingGraphemeCount = hasLetterSpacing
       ? countRenderedSpacingGraphemes(text, kind)
       : 0
     const width = addInternalLetterSpacing(
-      getCorrectedSegmentWidth(text, textMetrics, emojiCorrection),
+      getContextualSegmentWidth(text, textMetrics, followingContext, cache, emojiCorrection),
       spacingGraphemeCount,
       letterSpacing,
     )
@@ -519,6 +522,33 @@ function measureAnalysis(
       null,
       spacingGraphemeCount,
     )
+  }
+
+  // Following-segment shaping context: browsers shape whole runs, so a
+  // segment's advance can change with what comes after it. A space alone is
+  // not always enough lookahead — required-ligature rules can skip spaces and
+  // match on the next letter — so the context walks forward one grapheme per
+  // segment until it includes a non-space grapheme. Only visible neighbors
+  // participate; tabs, soft hyphens, zero-width breaks, and hard breaks end or
+  // don't join the shaped run.
+  function getFollowingContext(mi: number): string | null {
+    let context = ''
+    for (let ni = mi + 1; ni < analysis.len && ni <= mi + 3; ni++) {
+      const nextKind = analysis.kinds[ni]!
+      if (
+        nextKind !== 'text' &&
+        nextKind !== 'space' &&
+        nextKind !== 'preserved-space' &&
+        nextKind !== 'glue'
+      ) {
+        break
+      }
+      context += getFirstGrapheme(analysis.texts[ni]!)
+      if (nextKind === 'text') {
+        break
+      }
+    }
+    return context.length > 0 ? context : null
   }
 
   for (let mi = 0; mi < analysis.len; mi++) {
@@ -587,12 +617,14 @@ function measureAnalysis(
           segStart + unit.start,
           segWordLike,
           wordBreak === 'keep-all' || !unitMetrics.containsCJK,
+          null,
         )
       }
       continue
     }
 
-    pushMeasuredTextSegment(segText, segMetrics, segKind, segStart, segWordLike, true)
+    const followingContext = segKind === 'zero-width-break' ? null : getFollowingContext(mi)
+    pushMeasuredTextSegment(segText, segMetrics, segKind, segStart, segWordLike, true, followingContext)
   }
 
   if (chunkStartSegmentIndex < widths.length) {
@@ -660,7 +692,9 @@ function prepareInternal(
 //   2. Segment via Intl.Segmenter (handles CJK, Thai, etc.)
 //   3. Merge punctuation into preceding word ("better." as one unit)
 //   4. Split CJK words into individual graphemes (per-character line breaks)
-//   5. Measure each segment via canvas measureText, cache by (segment, font)
+//   5. Measure each segment via canvas measureText with a short following
+//      context (one grapheme per following segment, through spaces up to the
+//      next visible letter) for shaping, cache by (segment, font)
 //   6. Pre-measure graphemes of long words (for overflow-wrap: break-word)
 //   7. Correct emoji canvas inflation (auto-detected per font size)
 //   8. Optionally compute rich-path bidi metadata for custom renderers

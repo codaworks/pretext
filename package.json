@@ -54,7 +54,7 @@
     "accuracy-snapshot:safari": "ACCURACY_CHECK_BROWSER=safari bun run scripts/accuracy-check.ts --full --output=accuracy/safari.json",
     "benchmark-check": "bun run scripts/benchmark-check.ts",
     "benchmark-check:safari": "BENCHMARK_CHECK_BROWSER=safari bun run scripts/benchmark-check.ts",
-    "build:package": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build:package": "rimraf dist && tsc -p tsconfig.build.json",
     "check": "tsc && oxlint --type-aware src && knip",
     "corpus-check": "bun run scripts/corpus-check.ts",
     "corpus-check:safari": "CORPUS_CHECK_BROWSER=safari bun run scripts/corpus-check.ts",
@@ -70,7 +70,8 @@
     "letter-spacing-check": "bun run scripts/letter-spacing-check.ts",
     "letter-spacing-snapshot": "bun run scripts/letter-spacing-check.ts --output=accuracy/letter-spacing.json",
     "package-smoke-test": "bun run scripts/package-smoke-test.ts",
-    "prepack": "rm -rf dist && tsc -p tsconfig.build.json",
+    "prepack": "rimraf dist && tsc -p tsconfig.build.json",
+    "prepare": "rimraf dist && tsc -p tsconfig.build.json",
     "pre-wrap-check": "bun run scripts/pre-wrap-check.ts",
     "probe-check": "bun run scripts/probe-check.ts",
     "probe-check:safari": "PROBE_CHECK_BROWSER=safari bun run scripts/probe-check.ts",
@@ -86,6 +87,7 @@
     "marked": "^17.0.5",
     "oxlint": "^1.51.0",
     "oxlint-tsgolint": "^0.15.0",
+    "rimraf": "^6.1.3",
     "tsgolint": "^0.0.1",
     "typescript": "6.0.2"
   }

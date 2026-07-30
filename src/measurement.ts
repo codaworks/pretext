@@ -179,6 +179,39 @@ export function getCorrectedSegmentWidth(seg: string, metrics: SegmentMetrics, e
   return metrics.width - getEmojiCount(seg, metrics) * emojiCorrection
 }
 
+export function getFirstGrapheme(text: string): string {
+  const graphemeSegmenter = getSharedGraphemeSegmenter()
+  for (const gs of graphemeSegmenter.segment(text)) {
+    return gs.segment
+  }
+  return text
+}
+
+// Browsers shape whole runs, so a segment's advance can depend on what follows
+// it: required ligatures (e.g. Hebrew fonts that ligate a word-final letter
+// only when its shaping lookahead — which can skip spaces — finds a following
+// letter) and cross-boundary kerning. Measuring the segment together with a
+// short following context and subtracting that context's own advance
+// attributes the boundary interaction to the segment, and keeps per-line width
+// sums telescoping to the whole-run measurement.
+export function getContextualSegmentWidth(
+  seg: string,
+  metrics: SegmentMetrics,
+  followingContext: string | null,
+  cache: Map<string, SegmentMetrics>,
+  emojiCorrection: number,
+): number {
+  const base = getCorrectedSegmentWidth(seg, metrics, emojiCorrection)
+  if (followingContext === null) return base
+  const pair = seg + followingContext
+  const pairMetrics = getSegmentMetrics(pair, cache)
+  const contextMetrics = getSegmentMetrics(followingContext, cache)
+  const width =
+    getCorrectedSegmentWidth(pair, pairMetrics, emojiCorrection) -
+    getCorrectedSegmentWidth(followingContext, contextMetrics, emojiCorrection)
+  return width > 0 ? width : base
+}
+
 export function getSegmentBreakableFitAdvances(
   seg: string,
   metrics: SegmentMetrics,
