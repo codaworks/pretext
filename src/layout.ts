@@ -32,7 +32,7 @@
 //
 // Based on Sebastian Markbage's text-layout research (github.com/chenglou/text-layout).
 
-import { computeSegmentLevels } from './bidi.js'
+import { computeSegmentLevels, firstStrongIsRtl } from './bidi.js'
 import {
   analyzeText,
   canContinueKeepAllTextRun,
@@ -157,6 +157,12 @@ export type PrepareOptions = {
   wordBreak?: WordBreakMode
   letterSpacing?: number
   fontFeatureSettings?: string
+  // The paragraph direction the text is laid out in (CSS `direction`). Segments
+  // are measured with it, so neutrals at a segment's edges resolve into the run
+  // the browser puts them in — a Hebrew word's trailing `+`/`>` shape with the
+  // letter in an RTL paragraph and stand alone in an LTR one. Omitted, the
+  // text's first strong character decides, like `dir="auto"`.
+  direction?: 'ltr' | 'rtl'
 }
 
 // Internal hard-break chunk hint for the line walker. Not public because
@@ -396,12 +402,14 @@ function measureAnalysis(
   wordBreak: WordBreakMode,
   letterSpacing: number,
   fontFeatureSettings?: string,
+  direction?: 'ltr' | 'rtl',
 ): InternalPreparedText | PreparedTextWithSegments {
   const engineProfile = getEngineProfile()
   const { cache, emojiCorrection } = getFontMeasurementState(
     font,
     textMayContainEmoji(analysis.normalized),
     fontFeatureSettings,
+    direction,
   )
   const discretionaryHyphenWidth =
     getCorrectedSegmentWidth('-', getSegmentMetrics('-', cache), emojiCorrection) +
@@ -682,7 +690,15 @@ function prepareInternal(
   const wordBreak = options?.wordBreak ?? 'normal'
   const letterSpacing = options?.letterSpacing ?? 0
   const analysis = analyzeText(text, getEngineProfile(), options?.whiteSpace, wordBreak)
-  return measureAnalysis(analysis, font, includeSegments, wordBreak, letterSpacing, options?.fontFeatureSettings)
+  return measureAnalysis(
+    analysis,
+    font,
+    includeSegments,
+    wordBreak,
+    letterSpacing,
+    options?.fontFeatureSettings,
+    options?.direction ?? (firstStrongIsRtl(analysis.normalized) ? 'rtl' : 'ltr'),
+  )
 }
 
 // Prepare text for layout. Segments the text, measures each segment via canvas,

@@ -163,6 +163,20 @@ function computeBidiLevels(str: string): Int8Array | null {
   return levels
 }
 
+// The paragraph direction a text resolves to on its own: its first strong
+// character's (UBA P2/P3, what `dir="auto"` does), LTR when it has none.
+export function firstStrongIsRtl(text: string): boolean {
+  let i = 0
+  while (i < text.length) {
+    const codePoint = text.codePointAt(i)!
+    const t = classifyCodePoint(codePoint)
+    if (t === 'L') return false
+    if (t === 'R' || t === 'AL') return true
+    i += codePoint > 0xFFFF ? 2 : 1
+  }
+  return false
+}
+
 export function computeSegmentLevels(normalized: string, segStarts: number[]): Int8Array | null {
   const bidiLevels = computeBidiLevels(normalized)
   if (bidiLevels === null) return null

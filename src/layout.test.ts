@@ -91,12 +91,18 @@ function isWideCharacter(ch: string): boolean {
   )
 }
 
-function measureWidth(text: string, font: string, fontFeatureSettings?: string): number {
+function measureWidth(text: string, font: string, fontFeatureSettings?: string, direction = 'ltr'): number {
   const fontSize = parseFontSize(font)
   const chars = Array.from(text)
   // Fake feature rule: ss01 widens ordinary letters, mirroring how a real
   // stylistic set swaps glyphs with different advances.
   const letterEm = fontFeatureSettings?.includes('ss01') ? 0.8 : 0.6
+  // Fake shaping rule: in an RTL run a `+` after a Hebrew letter ligates into
+  // it (zero advance), mirroring Hebrew display fonts' ccmp ornaments; in an
+  // LTR run the `+` resolves into its own run and keeps its advance.
+  if (direction === 'rtl') {
+    return measureWidth(text.replace(/([א-ת])\++/g, '$1'), font, fontFeatureSettings)
+  }
   let width = 0
   let previousWasDecimalDigit = false
 
@@ -273,9 +279,10 @@ function getNonSpaceSegmentLevels(
 
 class TestCanvasRenderingContext2D {
   font = ''
+  direction = 'ltr'
 
   measureText(text: string): { width: number } {
-    return { width: measureWidth(text, this.font) }
+    return { width: measureWidth(text, this.font, undefined, this.direction) }
   }
 }
 
@@ -291,6 +298,7 @@ class TestOffscreenCanvas {
 // font-feature-settings from the canvas element's style, like real browsers.
 class TestFeatureCanvasContext {
   font = ''
+  direction = 'ltr'
   element: TestCanvasElement
 
   constructor(element: TestCanvasElement) {
@@ -298,7 +306,7 @@ class TestFeatureCanvasContext {
   }
 
   measureText(text: string): { width: number } {
-    return { width: measureWidth(text, this.font, this.element.style['fontFeatureSettings']) }
+    return { width: measureWidth(text, this.font, this.element.style['fontFeatureSettings'], this.direction) }
   }
 }
 
@@ -380,6 +388,37 @@ describe('font feature settings', () => {
     expect(measureNaturalWidth(featured)).toBeGreaterThan(measureNaturalWidth(plain))
     // same segment strings prepared plain again must not reuse feature widths
     expect(measureNaturalWidth(prepareWithSegments(text, FONT))).toBeCloseTo(measureWidth(text, FONT), 6)
+  })
+})
+
+describe('direction', () => {
+  test('a word keeps its + and > modifiers in one measured segment', () => {
+    // Hebrew display fonts shape these with the letter (ccmp/calt); the
+    // segment must reach the canvas whole
+    const prepared = prepareWithSegments('ד++אורית++א ר> חדוות+א', FONT)
+    expect(prepared.segments.filter(segment => segment !== ' ')).toEqual(['ד++אורית++א', 'ר>', 'חדוות+א'])
+  })
+
+  test('segments measure in the paragraph direction, cached per direction', () => {
+    const text = 'ד++אורית++א'
+    const rtl = prepareWithSegments(text, FONT, { direction: 'rtl' })
+    const ltr = prepareWithSegments(text, FONT, { direction: 'ltr' })
+    expect(measureNaturalWidth(rtl)).toBeCloseTo(measureWidth(text, FONT, undefined, 'rtl'), 6)
+    expect(measureNaturalWidth(ltr)).toBeCloseTo(measureWidth(text, FONT), 6)
+    expect(measureNaturalWidth(rtl)).toBeLessThan(measureNaturalWidth(ltr))
+  })
+
+  test('without a direction the first strong character decides, like dir=auto', () => {
+    const hebrew = 'ד++אורית++א'
+    expect(measureNaturalWidth(prepareWithSegments(hebrew, FONT))).toBeCloseTo(
+      measureNaturalWidth(prepareWithSegments(hebrew, FONT, { direction: 'rtl' })),
+      6,
+    )
+    const mixed = `abc ${hebrew}`
+    expect(measureNaturalWidth(prepareWithSegments(mixed, FONT))).toBeCloseTo(
+      measureNaturalWidth(prepareWithSegments(mixed, FONT, { direction: 'ltr' })),
+      6,
+    )
   })
 })
 

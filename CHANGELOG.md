@@ -12,6 +12,7 @@
 
 ### Fixed
 
+- `prepare()` / `prepareWithSegments()` accept a `direction` option (CSS `direction`; omitted, the text's first strong character decides, like `dir="auto"`); segments are measured with it, so neutrals at a segment's edges resolve into the run the browser puts them in. A Hebrew word's trailing `+`/`>` modifiers — which Hebrew display fonts shape together with the letter under `ccmp`/`calt` — then stay in the Hebrew run in an RTL paragraph instead of splitting into an LTR run that measures them as separate glyphs, which overstated widths and wrapped lines early. Widths are cached per direction.
 - Segment measurement now includes a short following context as shaping lookahead — through spaces up to the next visible letter — so cross-boundary kerning and required ligatures (e.g. Hebrew fonts that only ligate a word-final letter when a following letter shares the shaping buffer, even across a space) no longer overstate widths and wrap lines browsers keep whole.
 
 ## 0.0.8 - 2026-06-11

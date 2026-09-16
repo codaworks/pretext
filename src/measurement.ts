@@ -20,7 +20,10 @@ export type BreakableFitMode = 'sum-graphemes' | 'segment-prefixes' | 'pair-cont
 type MeasureContext = CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D
 
 let defaultContext: MeasureContext | null = null
+export type MeasureDirection = 'ltr' | 'rtl'
+
 let activeContext: MeasureContext | null = null
+let activeDirection: MeasureDirection = 'ltr'
 const featureContexts = new Map<string, { canvas: HTMLCanvasElement; ctx: CanvasRenderingContext2D }>()
 const MAX_FEATURE_CONTEXTS = 16
 const segmentMetricCaches = new Map<string, Map<string, SegmentMetrics>>()
@@ -106,6 +109,12 @@ export function getSegmentMetrics(seg: string, cache: Map<string, SegmentMetrics
   let metrics = cache.get(seg)
   if (metrics === undefined) {
     const ctx = getMeasureContext()
+    // measured in the paragraph direction, so a segment's edge neutrals resolve
+    // into the run the browser puts them in (a Hebrew word's trailing modifiers
+    // shape with the letter in an RTL paragraph, stand alone in an LTR one)
+    if ('direction' in ctx) {
+      ctx.direction = activeDirection
+    }
     metrics = {
       width: ctx.measureText(seg).width,
       containsCJK: isCJK(seg),
@@ -334,6 +343,7 @@ export function getFontMeasurementState(
   font: string,
   needsEmojiCorrection: boolean,
   fontFeatureSettings?: string,
+  direction: MeasureDirection = 'ltr',
 ): {
   cache: Map<string, SegmentMetrics>
   fontSize: number
@@ -341,8 +351,9 @@ export function getFontMeasurementState(
 } {
   activeContext = fontFeatureSettings === undefined ? getDefaultContext() : getFeatureContext(fontFeatureSettings)
   activeContext.font = font
+  activeDirection = direction
   const cache = getSegmentMetricCache(
-    fontFeatureSettings === undefined ? font : `${font}\u0000${fontFeatureSettings}`,
+    `${font}\u0000${fontFeatureSettings ?? ''}\u0000${direction}`,
   )
   const fontSize = parseFontSize(font)
   const emojiCorrection = needsEmojiCorrection ? getEmojiCorrection(font, fontSize) : 0
