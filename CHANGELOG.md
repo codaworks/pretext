@@ -1,6 +1,8 @@
 # Changelog
 
-## Unreleased
+## 1.0.0-fork.1 - 2026-10-14
+
+The codaworks fork of 1.0.0, with the three additions 0.0.8-fork.3 carried on 0.0.8.
 
 ### Added
 

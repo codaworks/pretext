@@ -1,6 +1,6 @@
 {
   "name": "@chenglou/pretext",
-  "version": "1.0.0",
+  "version": "1.0.0-fork.1",
   "description": "Fast, accurate & comprehensive text measurement & layout",
   "keywords": [
     "text-layout",
@@ -44,13 +44,14 @@
     "!src/test-data.ts"
   ],
   "scripts": {
-    "build:package": "rm -rf dist && tsc -p tsconfig.build.json",
+    "build:package": "rimraf dist && tsc -p tsconfig.build.json",
     "check": "tsc && tsc -p tsconfig.build.json --noEmit && oxlint --type-aware --deny-warnings src harness pages scripts && knip && bun run scripts/generate-engine-break-data.ts --check && bun run scripts/generate-webkit-generic-families.ts --check",
     "generate:engine-break-data": "bun run scripts/generate-engine-break-data.ts",
     "generate:webkit-generic-families": "bun run scripts/generate-webkit-generic-families.ts",
     "harness": "bun run harness/cli.ts",
     "package-smoke-test": "bun run scripts/package-smoke-test.ts",
-    "prepack": "bun run build:package",
+    "prepack": "rimraf dist && tsc -p tsconfig.build.json",
+    "prepare": "rimraf dist && tsc -p tsconfig.build.json",
     "site:build": "rm -rf site && bun run scripts/build-demo-site.ts",
     "start": "HOST=${HOST:-0.0.0.0}; PORT=3000; pids=$(lsof -tiTCP:$PORT -sTCP:LISTEN 2>/dev/null); if [ -n \"$pids\" ]; then echo \"Freeing port $PORT: terminating $pids\"; kill $pids 2>/dev/null || true; sleep 1; pids=$(lsof -tiTCP:$PORT -sTCP:LISTEN 2>/dev/null); if [ -n \"$pids\" ]; then echo \"Port $PORT still busy: killing $pids\"; kill -9 $pids 2>/dev/null || true; fi; fi; bun pages/*.html pages/demos/*.html pages/demos/*/index.html --host=$HOST:$PORT",
     "start:windows": "bun pages/*.html pages/demos/*.html pages/demos/*/index.html --host=0.0.0.0:3000"
@@ -61,6 +62,7 @@
     "marked": "^17.0.5",
     "oxlint": "^1.51.0",
     "oxlint-tsgolint": "^0.15.0",
+    "rimraf": "^6.1.3",
     "typescript": "7.0.2"
   }
 }

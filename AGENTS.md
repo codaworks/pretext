@@ -72,6 +72,11 @@ judgement; one outside them needs the maintainer first.
 - Preparation makes a new Canvas context when its language changes, because Chrome's OffscreenCanvas picks fonts for a
   new language only when the font string changes; not on `clearCache()`, because Chrome caches shaped text per canvas
   (`PLATFORM_BUGS.md`).
+- Fork additions (CHANGELOG, 1.0.0-fork.1): a measure state per `fontFeatureSettings` string, each on a hidden
+  in-document canvas whose CSS the context's `measureText` follows (OffscreenCanvas can't be styled), capped and released
+  by `clearCache()`; a font's measurement per `direction`, set on the context as its font is; and a following-context
+  shaping lookahead in `measureAnalysis()` (`measure(seg + ctx) − measure(ctx)`), which stands aside where a profile
+  already models the boundary (Chrome's space kerning, Safari's following space, Blink's han kerning).
 - Callers are well-typed TypeScript: no runtime check of an argument's type, and nothing promised to a caller the
   types rule out (`RESEARCH.md`, Decisions Log, 2026-10-06).
 - Source imports keep `.js` specifiers in `.ts` files so plain `tsc` emits working JS; extensionless ones pass
