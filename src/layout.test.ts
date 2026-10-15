@@ -8031,6 +8031,58 @@ test("a host with no document gets layouts from a font and measureText alone, un
   expect(own).toEqual(none)
 })
 
+describe('paragraph direction', () => {
+  beforeEach(() => {
+    clearCache()
+  })
+
+  test('segments measure in the paragraph direction, cached per direction; omitted, the first strong character decides', () => {
+    class DirectionContext {
+      font = ''
+      direction = 'inherit'
+
+      measureText(text: string): { width: number } {
+        canvasMeasurementCount++
+        const width = measureWidth(text, this.font)
+        // A Hebrew display font shapes a trailing modifier with the letter under rtl alone.
+        return { width: this.direction === 'rtl' && text.includes('+') ? width - 5 : width }
+      }
+    }
+    const contexts: DirectionContext[] = []
+    Reflect.set(globalThis, 'OffscreenCanvas', class {
+      getContext(): DirectionContext {
+        const context = new DirectionContext()
+        contexts.push(context)
+        return context
+      }
+    })
+    setLocale('he')
+    try {
+      const word = 'ד++'
+      const ltr = measureNaturalWidth(prepareWithSegments(word, FONT, { direction: 'ltr' }))
+      const rtl = measureNaturalWidth(prepareWithSegments(word, FONT, { direction: 'rtl' }))
+      expect(ltr - rtl).toBe(5)
+      expect(measureNaturalWidth(prepareWithSegments(word, FONT))).toBe(rtl)
+      expect(measureNaturalWidth(prepareWithSegments(`a ${word}`, FONT))).toBeCloseTo(measureWidth(`a ${word}`, FONT), 10)
+      expect(measureNaturalWidth(prepareWithSegments(`${word} a`, FONT))).toBeCloseTo(measureWidth(`${word} a`, FONT) - 5, 10)
+      const before = canvasMeasurementCount
+      prepareWithSegments(word, FONT, { direction: 'rtl' })
+      prepareWithSegments(word, FONT, { direction: 'ltr' })
+      expect(canvasMeasurementCount).toBe(before)
+      prepareWithSegments('ה', FONT, { direction: 'ltr' })
+      expect(contexts.at(-1)!.direction).toBe('ltr')
+      prepareWithSegments('ו', FONT, { direction: 'rtl' })
+      expect(contexts.at(-1)!.direction).toBe('rtl')
+      const items = [{ text: word, font: FONT }, { text: ' a', font: FONT }]
+      expect(measureRichInlineStats(prepareRichInline(items, { direction: 'ltr' }), 1000).maxLineWidth).toBeCloseTo(measureWidth(`${word} a`, FONT), 10)
+      expect(measureRichInlineStats(prepareRichInline(items), 1000).maxLineWidth).toBeCloseTo(measureWidth(`${word} a`, FONT) - 5, 10)
+    } finally {
+      setLocale()
+      Reflect.set(globalThis, 'OffscreenCanvas', TestOffscreenCanvas)
+    }
+  })
+})
+
 describe('font feature settings', () => {
   beforeEach(() => {
     clearCache()

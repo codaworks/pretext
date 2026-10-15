@@ -5,6 +5,7 @@
 ### Added
 
 - `prepare()` / `prepareWithSegments()` accept a `fontFeatureSettings` option (a CSS `font-feature-settings` value), and rich-inline items accept a per-item `fontFeatureSettings`, so text measured with OpenType features — stylistic sets, slashed zero, pinned alternates — wraps where the browser wraps it. Feature measurement uses a hidden in-document canvas per feature string, so it needs a document; without one the option is ignored.
+- `prepare()` / `prepareWithSegments()` accept a `direction` option (CSS `direction`), and `prepareRichInline()` takes it in its options; omitted, the text's first strong character decides, like `dir="auto"`. Segments are measured with it, so neutrals at a segment's edges resolve into the run the browser puts them in: a Hebrew word's trailing `+`/`>` modifiers, which Hebrew display fonts shape together with the letter under `ccmp`/`calt`, stay in the Hebrew run in an RTL paragraph instead of measuring as separate glyphs. Widths are cached per direction.
 
 ## 1.0.0 - 2026-10-14
 

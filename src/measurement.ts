@@ -366,6 +366,8 @@ export type BreakableFitMode = 'sum-graphemes' | 'segment-prefixes' | 'pair-cont
 // give it preparation's. Chrome keeps a resolved font while its font string is
 // unchanged, so the context, and every width measured through it, belong to the
 // language it was created under: all of it is replaced when that language changes.
+export type MeasureDirection = 'ltr' | 'rtl'
+
 type MeasureState = {
   language: string | null
   fontFeatureSettings: string // '' for none; a feature string needs its own in-document canvas (createContext)
@@ -373,6 +375,7 @@ type MeasureState = {
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D // Once made, read through getContext() alone
   font: string // The font getContext() set the context to since a font was last looked up, or ''
   letterSpacing: string // The letterSpacing getContext() last set the context to
+  direction: MeasureDirection | ''
   // A second context, under text-rendering: optimizeLegibility, where Canvas shapes a string
   // whole, and the Canvas font it is set to: made for the first font asked about its kana
   // (getFontKanaKerning).
@@ -400,6 +403,9 @@ export type FontMeasurement = {
   // language names replaced by their families.
   canvasFont: string
   letterSpacing: string // The Canvas letterSpacing its text is shaped under: LETTER_SPACED_SHAPING or none
+  // A segment's edge neutrals shape by the paragraph direction: a Hebrew word's trailing
+  // modifiers join the letter under rtl and stand alone under ltr.
+  direction: MeasureDirection
   metrics: Map<string, SegmentMetrics>
   // Metrics of a text item measured together with one following U+0020, keyed by
   // the item alone. The width includes that space.
@@ -836,6 +842,7 @@ function getWholeRunContext(measurement: FontMeasurement): CanvasRenderingContex
     state.wholeRunContext.textRendering = 'optimizeLegibility'
   }
   if (state.wholeRunFont !== measurement.kanaFont) state.wholeRunContext.font = state.wholeRunFont = measurement.kanaFont
+  state.wholeRunContext.direction = measurement.direction
   return state.wholeRunContext
 }
 
@@ -1349,7 +1356,7 @@ function measureFitAdvances(
 // measurement of its own where the context shapes it as the page does: its widths,
 // prefixes and line-edge facts all come from that shaping. The context isn't touched
 // here: text that is all in the font's caches measures nothing (getContext).
-export function getFontMeasurement(font: string, language: string | null, letterSpaced: boolean, fontFeatureSettings = ''): FontMeasurement {
+export function getFontMeasurement(font: string, language: string | null, letterSpaced: boolean, fontFeatureSettings = '', direction: MeasureDirection = 'ltr'): FontMeasurement {
   // Measuring starts here, for a text and for each item of a rich-inline paragraph, with the
   // language the preparation resolved. After that language changes, start again with a new
   // context and empty caches; clearing the caches alone would re-measure with fonts resolved
@@ -1379,12 +1386,13 @@ export function getFontMeasurement(font: string, language: string | null, letter
   // context takes a face added to document.fonts only when its font is assigned, and the
   // question below leaves the context on a font of its own, whether it throws or not.
   state.font = ''
-  let measurement = fonts.get(font)
+  const key = direction === 'ltr' ? font : `${font}\u0000rtl`
+  let measurement = fonts.get(key)
   if (measurement === undefined) {
     const canvasFont = state.genericFamilies === null ? font : getCanvasFont(font, state.genericFamilies)
     if (!contextTakesFont(state.context, canvasFont)) throw new RangeError(`font must be a font string Canvas takes, a size in px then a family, such as 16px Inter, not "${font}"`)
-    measurement = { state, canvasFont, letterSpacing: shaped ? LETTER_SPACED_SHAPING : '0px', metrics: new Map(), followingSpaceMetrics: new Map(), spaceKerning: undefined, measuredKana: false, kanaKerning: undefined, kanaFont: canvasFont, emojiCorrection: null, emojiWidth: 0, hyphenText: null, spaceWidth: null, hanKerning: undefined, ligaturePairs: new Map(), glyphCounts: new Map() }
-    fonts.set(font, measurement)
+    measurement = { state, canvasFont, letterSpacing: shaped ? LETTER_SPACED_SHAPING : '0px', direction, metrics: new Map(), followingSpaceMetrics: new Map(), spaceKerning: undefined, measuredKana: false, kanaKerning: undefined, kanaFont: canvasFont, emojiCorrection: null, emojiWidth: 0, hyphenText: null, spaceWidth: null, hanKerning: undefined, ligaturePairs: new Map(), glyphCounts: new Map() }
+    fonts.set(key, measurement)
   }
   return measurement
 }
@@ -1422,6 +1430,7 @@ export function getContext(measurement: FontMeasurement): CanvasRenderingContext
   const state = measurement.state
   if (state.font !== measurement.canvasFont) state.context.font = state.font = measurement.canvasFont
   if (state.letterSpacing !== measurement.letterSpacing) state.context.letterSpacing = state.letterSpacing = measurement.letterSpacing
+  if (state.direction !== measurement.direction) state.context.direction = state.direction = measurement.direction
   return state.context
 }
 
@@ -1462,6 +1471,7 @@ function createMeasureState(language: string | null, fontFeatureSettings: string
     context,
     font: '',
     letterSpacing: '0px',
+    direction: '',
     wholeRunContext: null,
     wholeRunFont: '',
     genericFamilies: language !== null && profile.namesGenericFamiliesByLanguage ? getWebKitGenericFamilies(language, context) : null,

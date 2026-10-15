@@ -24,7 +24,7 @@ import {
   readLetterSpacing,
   setLocaleLanguage,
 } from './measurement.js'
-import { measureAnalysis } from './prepare.js'
+import { measureAnalysis, resolveDirection } from './prepare.js'
 import {
   countPreparedLines,
   normalizeMaxWidth,
@@ -102,6 +102,7 @@ export type PrepareOptions = {
   wordBreak?: WordBreakMode
   letterSpacing?: number
   fontFeatureSettings?: string
+  direction?: 'ltr' | 'rtl' // Omitted, the first strong character decides, like dir="auto"
 }
 
 // --- Public API ---
@@ -118,7 +119,7 @@ function prepareInternal(
   // One language read: break rules and measurement both follow it.
   const language = getPreparationLanguage(engineProfile)
   const analysis = analyzeText(text, engineProfile, options?.whiteSpace, wordBreak, language)
-  return measureAnalysis(analysis, 0, analysis.flags.length, font, includeSegments, letterSpacing, engineProfile, language, true, null, options?.fontFeatureSettings ?? '')
+  return measureAnalysis(analysis, 0, analysis.flags.length, font, includeSegments, letterSpacing, engineProfile, language, true, null, options?.fontFeatureSettings ?? '', options?.direction ?? resolveDirection(text))
 }
 
 // Prepare text for layout. Segments the text, measures each segment via canvas,

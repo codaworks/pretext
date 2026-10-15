@@ -30,7 +30,7 @@ import {
   type PreparedLineData,
 } from './line-break.js'
 import { getEngineProfile, getFontMeasurement, getPreparationLanguage, getSpaceWidth, readLetterSpacing, zeros, type EngineProfile } from './measurement.js'
-import { measureAnalysis, type ParagraphLists } from './prepare.js'
+import { measureAnalysis, resolveDirection, type ParagraphLists } from './prepare.js'
 
 // Helper for rich-text inline flow under `white-space: normal` or `pre-wrap`: one paragraph's text
 // broken across its items, as a browser lays out the text of an inline formatting context across
@@ -76,6 +76,7 @@ export type RichInlineBox = {
 export type RichInlineOptions = {
   whiteSpace?: WhiteSpaceMode // `pre-wrap`: CSS `white-space: pre-wrap`, as prepare() takes it
   wordBreak?: WordBreakMode // `keep-all`: CSS `word-break: keep-all`, as prepare() takes it
+  direction?: 'ltr' | 'rtl'
 }
 
 export type PreparedRichInline = {
@@ -212,7 +213,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
   const only = onlyIndex < 0 ? undefined : items[onlyIndex]!
   if (only !== undefined && only.text !== undefined && only.break !== 'never' && (only.extraWidth ?? 0) === 0) {
     const analysis = analyzeText(only.text, profile, whiteSpace, wordBreak, language)
-    const data = measureAnalysis(analysis, 0, analysis.flags.length, only.font, true, readLetterSpacing(only.letterSpacing, profile), profile, language, true, null, only.fontFeatureSettings ?? '') as PreparedSegments
+    const data = measureAnalysis(analysis, 0, analysis.flags.length, only.font, true, readLetterSpacing(only.letterSpacing, profile), profile, language, true, null, only.fontFeatureSettings ?? '', options?.direction ?? resolveDirection(only.text)) as PreparedSegments
     const itemSegments: number[] = []
     for (let index = 0; index <= items.length; index++) itemSegments.push(index <= onlyIndex ? 0 : data.segmentFlags.length)
     return findWholeLine({
@@ -278,6 +279,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     if (!isAtomic && (item.extraWidth ?? 0) !== 0) padded++
     if ((item.extraWidth ?? 0) < 0) mayNarrow = true
   }
+  const direction = options?.direction ?? resolveDirection(source)
   const paragraph: ParagraphItems = { items, starts, atomic, ownSegmentBreaks: !profile.transformsSegmentBreaksAcrossItems, sourceOffsets: null }
   const analysis = analyzeText(source, profile, whiteSpace, wordBreak, language, paragraph)
   const offsets = paragraph.sourceOffsets!
@@ -356,7 +358,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
         width = item.width
       } else {
         const ownAnalysis = analyzeText(item.text, profile, 'normal', wordBreak, language)
-        const own = measureAnalysis(ownAnalysis, 0, ownAnalysis.flags.length, item.font, false, readLetterSpacing(item.letterSpacing, profile), profile, language, false, null, item.fontFeatureSettings ?? '')
+        const own = measureAnalysis(ownAnalysis, 0, ownAnalysis.flags.length, item.font, false, readLetterSpacing(item.letterSpacing, profile), profile, language, false, null, item.fontFeatureSettings ?? '', direction)
         const start: LayoutCursor = { segmentIndex: 0, graphemeIndex: 0 }
         if (normalizePreparedLineStart(own, start)) width = stepPreparedLineGeometryFromStart(own, start, Number.POSITIVE_INFINITY)!
         width += item.extraWidth ?? 0
@@ -391,7 +393,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
       // measureAnalysis() measures one.
       if (letterSpacing !== 0) simple = false
       flags[widths.length] = SPACE | (analysis.flags[from]! & (UNBROKEN | RETURNABLE)) | (letterSpacing !== 0 ? SPACED : 0)
-      widths.push(getSpaceWidth(getFontMeasurement(item.font, language, letterSpacing !== 0, item.fontFeatureSettings ?? '')) + (spacingsDiffer ? letterSpacing : 0))
+      widths.push(getSpaceWidth(getFontMeasurement(item.font, language, letterSpacing !== 0, item.fontFeatureSettings ?? '', direction)) + (spacingsDiffer ? letterSpacing : 0))
       segments.push(' ')
       breakableFitAdvances.push(null)
       sourceStarts.push(offset - starts[index]!)
@@ -476,7 +478,7 @@ export function prepareRichInline(items: Array<RichInlineItem | RichInlineBox>, 
     // The item's segments, measured in its font onto the end of the paragraph's lists; `sub` holds
     // what else measurement gives them, from the item's first segment.
     const itemAt = widths.length
-    const sub = measureAnalysis(analysis, from, to, item.font, false, letterSpacing, profile, language, true, lists, item.fontFeatureSettings ?? '')
+    const sub = measureAnalysis(analysis, from, to, item.font, false, letterSpacing, profile, language, true, lists, item.fontFeatureSettings ?? '', direction)
     simple &&= sub.simpleLineCountFastPath
     if (readsItemFonts) {
       // The gap before the hyphen is the letter spacing after the grapheme before it.

@@ -27,6 +27,7 @@ import {
   type BreakableFitMode,
   type EngineProfile,
   type FontMeasurement,
+  type MeasureDirection,
   getCorrectedSegmentWidth,
   getEmojiCorrection,
   getExtraSpacings,
@@ -307,6 +308,18 @@ function getFollowingSpaceTail(analysis: TextAnalysis, analysisIndex: number, to
   return normalized.slice(starts[analysisIndex + 1], spaceStart)
 }
 
+const rtlStrongRe = /[\u{0590}-\u{08FF}\u{FB1D}-\u{FDFF}\u{FE70}-\u{FEFF}\u{200F}\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u
+const ltrStrongRe = /[\p{L}\u{200E}]/u
+
+// First strong character, as dir="auto" resolves (UBA P2, P3).
+export function resolveDirection(text: string): MeasureDirection {
+  for (const ch of text) {
+    if (rtlStrongRe.test(ch)) return 'rtl'
+    if (ltrStrongRe.test(ch)) return 'ltr'
+  }
+  return 'ltr'
+}
+
 // A zero-width break before the space ends the measured item, so only the
 // item's kerning with the space is added to the text's own width.
 function getTailKerning(item: string, measurement: FontMeasurement, spaceWidth: number): number {
@@ -363,6 +376,7 @@ export function measureAnalysis(
   // The paragraph's lists for a rich-inline item, null for a text.
   paragraph: ParagraphLists | null,
   fontFeatureSettings = '',
+  direction: MeasureDirection = 'ltr',
 ): (PreparedText & PreparedLineBreakData) | (PreparedText & PreparedSegments) {
   const { normalized, texts, starts, flags } = analysis
   // The measured text and where it starts in the analysis's: what is asked of the whole text
@@ -385,7 +399,7 @@ export function measureAnalysis(
   // Where the first measured segment goes in the lists.
   const base = widths.length
   const hasLetterSpacing = letterSpacing !== 0
-  const fontMeasurement = getFontMeasurement(font, language, hasLetterSpacing, fontFeatureSettings)
+  const fontMeasurement = getFontMeasurement(font, language, hasLetterSpacing, fontFeatureSettings, direction)
   const emojiCorrection = textMayContainEmoji(own) ? getEmojiCorrection(font, fontMeasurement) : 0
   // Whether the text holds a U+0020. Only then can a space follow one of its text segments
   // (getFollowingSpaceTail), so a text of none, as most CJK paragraphs are, doesn't look for
