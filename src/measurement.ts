@@ -368,6 +368,8 @@ export type BreakableFitMode = 'sum-graphemes' | 'segment-prefixes' | 'pair-cont
 // language it was created under: all of it is replaced when that language changes.
 type MeasureState = {
   language: string | null
+  fontFeatureSettings: string // '' for none; a feature string needs its own in-document canvas (createContext)
+  canvases: HTMLCanvasElement[]
   context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D // Once made, read through getContext() alone
   font: string // The font getContext() set the context to since a font was last looked up, or ''
   letterSpacing: string // The letterSpacing getContext() last set the context to
@@ -388,7 +390,8 @@ type MeasureState = {
   letterSpacedFonts: Map<string, FontMeasurement>
   segments: number // The segments the fonts' caches hold between them (MAX_CACHED_SEGMENTS)
 }
-let measureState: MeasureState | null = null
+const measureStates = new Map<string, MeasureState>()
+const MAX_FEATURE_STATES = 16
 // What preparation keeps per font. It all goes together, when the caches clear or the
 // language changes.
 export type FontMeasurement = {
@@ -603,7 +606,9 @@ export function getPreparationLanguage(profile: EngineProfile): string | null {
   // preparations (MAX_CACHED_SEGMENTS), and not where a font is looked up: a rich-inline
   // paragraph looks one up for each of its items, and caches dropped between two of them would
   // have one paragraph measured partly from the caches and partly anew.
-  if (measureState !== null && measureState.segments > MAX_CACHED_SEGMENTS) clearMeasurementCaches()
+  let segments = 0
+  for (const state of measureStates.values()) segments += state.segments
+  if (segments > MAX_CACHED_SEGMENTS) clearMeasurementCaches()
   let language = localeLanguage ?? null
   if (localeLanguage === undefined && typeof document !== 'undefined') {
     const lang = (document.documentElement as HTMLElement | null | undefined)?.lang
@@ -827,7 +832,7 @@ const KANA_PROBE = '\u30D7\u30C0\u30B0\u30BF\u30CE\u30E0\u30D6\u30A4\u30E1\u3048
 function getWholeRunContext(measurement: FontMeasurement): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D {
   const state = measurement.state
   if (state.wholeRunContext === null) {
-    state.wholeRunContext = createContext(state.language)
+    state.wholeRunContext = createContext(state.language, state.fontFeatureSettings, state.canvases)
     state.wholeRunContext.textRendering = 'optimizeLegibility'
   }
   if (state.wholeRunFont !== measurement.kanaFont) state.wholeRunContext.font = state.wholeRunFont = measurement.kanaFont
@@ -1344,13 +1349,30 @@ function measureFitAdvances(
 // measurement of its own where the context shapes it as the page does: its widths,
 // prefixes and line-edge facts all come from that shaping. The context isn't touched
 // here: text that is all in the font's caches measures nothing (getContext).
-export function getFontMeasurement(font: string, language: string | null, letterSpaced: boolean): FontMeasurement {
+export function getFontMeasurement(font: string, language: string | null, letterSpaced: boolean, fontFeatureSettings = ''): FontMeasurement {
   // Measuring starts here, for a text and for each item of a rich-inline paragraph, with the
   // language the preparation resolved. After that language changes, start again with a new
   // context and empty caches; clearing the caches alone would re-measure with fonts resolved
   // under the old language.
-  if (measureState === null || measureState.language !== language) measureState = createMeasureState(language)
-  const state = measureState
+  let state = measureStates.get(fontFeatureSettings)
+  if (state !== undefined && state.language !== language) {
+    dropMeasureStates()
+    state = undefined
+  }
+  if (state === undefined) {
+    const first = measureStates.get('')
+    if (first !== undefined && first.language !== language) dropMeasureStates()
+    if (fontFeatureSettings !== '' && measureStates.size > MAX_FEATURE_STATES) {
+      for (const [key, oldest] of measureStates) {
+        if (key === '') continue
+        dropMeasureState(oldest)
+        measureStates.delete(key)
+        break
+      }
+    }
+    state = createMeasureState(language, fontFeatureSettings)
+    measureStates.set(fontFeatureSettings, state)
+  }
   const shaped = letterSpaced && state.shapesLetterSpaced
   const fonts = shaped ? state.letterSpacedFonts : state.fonts
   // The first measurement after a lookup sets the font again, the same string too: Firefox's
@@ -1404,23 +1426,39 @@ export function getContext(measurement: FontMeasurement): CanvasRenderingContext
 }
 
 // A context's `lang` follows the page's, and preparation's can be setLocale()'s or Blink's
-// default locale instead.
-function createContext(language: string | null): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D {
+// default locale instead. Only the CSS of an in-document canvas element reaches its context's
+// measureText, so a feature string takes one; without <body> features are ignored.
+function createContext(language: string | null, fontFeatureSettings: string, canvases: HTMLCanvasElement[]): CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D {
   // jsdom and happy-dom have a document whose canvas gives no 2D context: getContext() returns null there.
   let context: CanvasRenderingContext2D | OffscreenCanvasRenderingContext2D | null = null
-  if (typeof OffscreenCanvas !== 'undefined') context = new OffscreenCanvas(1, 1).getContext('2d')
+  const body = typeof document === 'undefined' ? null : document.body as HTMLElement | null
+  if (fontFeatureSettings !== '' && body !== null) {
+    const canvas = document.createElement('canvas')
+    canvas.width = 1
+    canvas.height = 1
+    // pinned and zero-sized: an auto-inset absolute element lands at its static position after
+    // the page content, where even a hidden 1px box gives the document a scrollbar
+    canvas.style.cssText = 'position: absolute; top: 0; left: 0; width: 0; height: 0; visibility: hidden'
+    canvas.style.fontFeatureSettings = fontFeatureSettings
+    body.appendChild(canvas)
+    canvases.push(canvas)
+    context = canvas.getContext('2d')
+  } else if (typeof OffscreenCanvas !== 'undefined') context = new OffscreenCanvas(1, 1).getContext('2d')
   else if (typeof document !== 'undefined') context = document.createElement('canvas').getContext('2d')
   if (context === null) throw new Error('Text measurement requires OffscreenCanvas or a DOM canvas context.')
   if (language !== null && 'lang' in context) context.lang = language
   return context
 }
 
-function createMeasureState(language: string | null): MeasureState {
-  const context = createContext(language)
+function createMeasureState(language: string | null, fontFeatureSettings: string): MeasureState {
+  const canvases: HTMLCanvasElement[] = []
+  const context = createContext(language, fontFeatureSettings, canvases)
   const profile = getEngineProfile()
   const takesLetterSpacing = typeof context.letterSpacing === 'string'
   return {
     language,
+    fontFeatureSettings,
+    canvases,
     context,
     font: '',
     letterSpacing: '0px',
@@ -1435,9 +1473,25 @@ function createMeasureState(language: string | null): MeasureState {
   }
 }
 
+function dropMeasureState(state: MeasureState): void {
+  for (const canvas of state.canvases) canvas.remove()
+  state.canvases.length = 0
+}
+
+function dropMeasureStates(): void {
+  for (const state of measureStates.values()) dropMeasureState(state)
+  measureStates.clear()
+}
+
 export function clearMeasurementCaches(): void {
-  if (measureState === null) return
-  measureState.fonts.clear()
-  measureState.letterSpacedFonts.clear()
-  measureState.segments = 0
+  for (const [key, state] of measureStates) {
+    if (key !== '') {
+      dropMeasureState(state)
+      measureStates.delete(key)
+      continue
+    }
+    state.fonts.clear()
+    state.letterSpacedFonts.clear()
+    state.segments = 0
+  }
 }

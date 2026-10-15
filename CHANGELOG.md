@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Added
+
+- `prepare()` / `prepareWithSegments()` accept a `fontFeatureSettings` option (a CSS `font-feature-settings` value), and rich-inline items accept a per-item `fontFeatureSettings`, so text measured with OpenType features — stylistic sets, slashed zero, pinned alternates — wraps where the browser wraps it. Feature measurement uses a hidden in-document canvas per feature string, so it needs a document; without one the option is ignored.
+
 ## 1.0.0 - 2026-10-14
 
 ### Upgrading from 0.0.9

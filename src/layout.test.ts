@@ -8030,3 +8030,47 @@ test("a host with no document gets layouts from a font and measureText alone, un
   expect(reactNative).toEqual(none)
   expect(own).toEqual(none)
 })
+
+describe('font feature settings', () => {
+  beforeEach(() => {
+    clearCache()
+  })
+
+  test('font feature settings measure through an in-document canvas of their own, cached apart and released by clearCache()', () => {
+    const canvases: { features: string; removed: boolean }[] = []
+    Reflect.set(globalThis, 'document', {
+      body: { appendChild: () => undefined },
+      createElement: () => {
+        const canvas = { width: 0, height: 0, style: { cssText: '', fontFeatureSettings: '' }, remove: () => { entry.removed = true }, getContext: () => context }
+        const entry = { features: '', removed: false }
+        canvases.push(entry)
+        const context = {
+          font: '',
+          measureText(text: string): { width: number } {
+            canvasMeasurementCount++
+            entry.features = canvas.style.fontFeatureSettings
+            return { width: measureWidth(text, context.font) * (canvas.style.fontFeatureSettings === '"ss01" 1' ? 1.25 : 1) }
+          },
+        }
+        return canvas
+      },
+    })
+    try {
+      const plain = measureNaturalWidth(prepareWithSegments('abc def', FONT))
+      const features = { fontFeatureSettings: '"ss01" 1' }
+      expect(measureNaturalWidth(prepareWithSegments('abc def', FONT, features))).toBeCloseTo(plain * 1.25, 10)
+      expect(measureNaturalWidth(prepareWithSegments('abc def', FONT))).toBe(plain)
+      expect(canvases.map(canvas => canvas.features)).toEqual(['"ss01" 1'])
+      const before = canvasMeasurementCount
+      prepareWithSegments('abc def', FONT, features)
+      expect(canvasMeasurementCount).toBe(before)
+      const items = [{ text: 'abc', font: FONT, ...features }, { text: ' def', font: FONT }]
+      expect(measureRichInlineStats(prepareRichInline(items), 1000).maxLineWidth).toBeCloseTo(measureWidth('abc', FONT) * 1.25 + measureWidth(' def', FONT), 10)
+      clearCache()
+      expect(canvases.map(canvas => canvas.removed)).toEqual([true])
+      expect(measureNaturalWidth(prepareWithSegments('abc def', FONT))).toBe(plain)
+    } finally {
+      Reflect.deleteProperty(globalThis, 'document')
+    }
+  })
+})
