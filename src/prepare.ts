@@ -308,7 +308,24 @@ function getFollowingSpaceTail(analysis: TextAnalysis, analysisIndex: number, to
   return normalized.slice(starts[analysisIndex + 1], spaceStart)
 }
 
-const rtlStrongRe = /[\u{0590}-\u{08FF}\u{FB1D}-\u{FDFF}\u{FE70}-\u{FEFF}\u{200F}\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u
+// A space alone is not enough lookahead: required ligatures can skip spaces and match on the
+// next letter (Hebrew word-final forms), so the context runs through spaces to the first letter.
+function getFollowingContext(analysis: TextAnalysis, analysisIndex: number, to: number, graphemeTable: GraphemeTable): string | null {
+  const { texts, flags } = analysis
+  let context = ''
+  for (let next = analysisIndex + 1; next < to && next <= analysisIndex + 3; next++) {
+    const kind = flags[next]! & KIND_BITS
+    if (kind !== TEXT && kind !== SPACE && kind !== PRESERVED_SPACE) break
+    const text = texts[next]!
+    const ends = new Int32Array(text.length)
+    findGraphemeEnds(graphemeTable, text, 0, text.length, ends)
+    context += text.slice(0, ends[0])
+    if (kind === TEXT) break
+  }
+  return context.length > 0 ? context : null
+}
+
+const rtlStrongRe =/[\u{0590}-\u{08FF}\u{FB1D}-\u{FDFF}\u{FE70}-\u{FEFF}\u{200F}\u{10800}-\u{10FFF}\u{1E800}-\u{1EFFF}]/u
 const ltrStrongRe = /[\p{L}\u{200E}]/u
 
 // First strong character, as dir="auto" resolves (UBA P2, P3).
@@ -405,6 +422,7 @@ export function measureAnalysis(
   // (getFollowingSpaceTail), so a text of none, as most CJK paragraphs are, doesn't look for
   // one after each segment.
   const hasSpace = own.includes(' ')
+  const hanKerns = engineProfile.hanKerning && textMayHanKern(own)
   // The font's space, asked for only by a text that holds a space or a tab. A web font split by
   // unicode-range has the part with U+0020 loaded only once a text that holds a character of
   // that part was loaded for (document.fonts.load(font, text)), so a text of other characters
@@ -505,6 +523,16 @@ export function measureAnalysis(
               spaceSharesScriptRun(scriptRuns, own, starts[mi]! - ownStart, starts[mi]! - ownStart + text.length)) {
               widths[at - 1] = widths[at - 1]! + kerning.before
             }
+          }
+        }
+        if (fontSpaceKerning === null && followingSpaceTail === null && !hanKerns) {
+          const context = getFollowingContext(analysis, mi, to, engineProfile.graphemeTable)
+          if (context !== null && !textMayContainEmoji(text + context)) {
+            const pairWidth = getTextWidth(text + context, fontMeasurement, emojiCorrection)
+            const joined = pairWidth - getTextWidth(context, fontMeasurement, emojiCorrection)
+            const kerning = joined - getCorrectedSegmentWidth(text, textMetrics, fontMeasurement, emojiCorrection)
+            // up to the pair's width / 2^22 is float32 rounding, as for a character and a space
+            if (joined > 0 && Math.abs(kerning) > pairWidth / 0x400000) followingSpaceKerning += kerning
           }
         }
         width = getTextSegmentWidth(text, textMetrics, fontMeasurement, emojiCorrection, measuredWithSpace ? spaceWidth : 0, followingSpaceKerning)
@@ -612,7 +640,7 @@ export function measureAnalysis(
   // A segment's width is its width between the text before and after it; one that starts
   // a line takes back the halt Blink gives its first character there.
   let hanKerning: HanKerningTrims = { widthTrims: null, lineStartExtras: null, lineEndTrims: null, overflowLineEndTrims: null }
-  if (engineProfile.hanKerning && textMayHanKern(own)) {
+  if (hanKerns) {
     hanKerning = getHanKerningTrims(fontMeasurement, analysis, from, to)
     const trims = hanKerning.widthTrims
     if (trims !== null) for (let i = 0; i < trims.length; i++) widths[base + i] = widths[base + i]! - trims[i]!

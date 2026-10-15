@@ -8031,6 +8031,39 @@ test("a host with no document gets layouts from a font and measureText alone, un
   expect(own).toEqual(none)
 })
 
+describe('following-context measurement', () => {
+  beforeEach(() => {
+    clearCache()
+  })
+
+  test('a segment is measured with a short following context, so a ligature across a space does not wrap the line early', () => {
+    // The font joins `f`, a space and `i` into one glyph, 6px narrower than the three apart.
+    const measureText = Object.getOwnPropertyDescriptor(TestCanvasRenderingContext2D.prototype, 'measureText')!
+    Object.defineProperty(TestCanvasRenderingContext2D.prototype, 'measureText', {
+      ...measureText,
+      value(this: TestCanvasRenderingContext2D, text: string) {
+        canvasMeasurementCount++
+        return { width: measureWidth(text, this.font) - (text.includes('f i') ? 6 : 0) }
+      },
+    })
+    try {
+      const text = 'af ib'
+      const whole = measureWidth(text, FONT) - 6
+      const prepared = prepareWithSegments(text, FONT)
+      expect(Array.from(prepared.widths)).toEqual([measureWidth('af', FONT) - 6, measureWidth(' ', FONT), measureWidth('ib', FONT)])
+      expect(measureNaturalWidth(prepared)).toBe(whole)
+      expect(layout(prepared, whole, LINE_HEIGHT).lineCount).toBe(1)
+      expect(layout(prepared, whole - 1, LINE_HEIGHT).lineCount).toBe(2)
+      // Nothing joins across a tab, a hard break or a change of item.
+      expect(Array.from(prepareWithSegments('af\tib', FONT, { whiteSpace: 'pre-wrap' }).widths)[0]).toBe(measureWidth('af', FONT))
+      expect(Array.from(prepareWithSegments('af\nib', FONT, { whiteSpace: 'pre-wrap' }).widths)[0]).toBe(measureWidth('af', FONT))
+      expect(measureRichInlineStats(prepareRichInline([{ text: 'af', font: FONT }, { text: ' ib', font: FONT }]), 1000).maxLineWidth).toBe(measureWidth(text, FONT))
+    } finally {
+      Object.defineProperty(TestCanvasRenderingContext2D.prototype, 'measureText', measureText)
+    }
+  })
+})
+
 describe('paragraph direction', () => {
   beforeEach(() => {
     clearCache()
